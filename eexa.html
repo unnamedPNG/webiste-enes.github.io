@@ -1,0 +1,475 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Exam Generator - PDF Style</title>
+    
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://unpkg.com/lucide@latest"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/html2pdf.js/0.10.1/html2pdf.bundle.min.js"></script>
+
+    <style>
+        body { font-family: 'Inter', sans-serif; background-color: #f3f4f6; }
+        ::-webkit-scrollbar { width: 6px; }
+        ::-webkit-scrollbar-track { background: transparent; }
+        ::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 3px; }
+        
+        /* A4 Preview Styles */
+        .a4-page {
+            width: 210mm;
+            height: 297mm;
+            padding: 20mm;
+            margin: 10mm auto;
+            background: white;
+            box-shadow: 0 0 10px rgba(0,0,0,0.1);
+            position: relative;
+            display: flex;
+            flex-direction: column;
+            box-sizing: border-box;
+        }
+
+        @media print {
+            @page { size: A4; margin: 0; }
+            body { background-color: white; height: auto; overflow: visible; }
+            .no-print { display: none !important; }
+            .a4-page { margin: 0; box-shadow: none; width: 100%; height: 297mm; page-break-after: always; padding: 20mm; }
+            .a4-page:last-child { page-break-after: auto; }
+        }
+    </style>
+</head>
+<body class="text-slate-800 h-screen flex flex-col overflow-hidden">
+
+<header class="bg-white border-b border-slate-200 px-6 py-4 flex items-center justify-between no-print z-10 shrink-0">
+    <div class="flex items-center gap-3">
+        <div class="bg-indigo-600 p-2 rounded-lg text-white">
+            <i data-lucide="file-check"></i>
+        </div>
+        <h1 class="text-xl font-bold text-slate-800">Exam Generator <span class="text-xs font-normal text-slate-500 ml-2">v2.0</span></h1>
+    </div>
+    <button onclick="resetApp()" class="text-slate-500 hover:text-red-600 font-medium text-sm flex items-center gap-2">
+        <i data-lucide="rotate-ccw" class="w-4 h-4"></i> Reset
+    </button>
+</header>
+
+<div class="flex flex-1 overflow-hidden relative">
+    
+    <aside class="w-full md:w-[380px] bg-white border-r border-slate-200 flex flex-col no-print z-10 shadow-lg md:shadow-none absolute md:relative h-full transition-transform transform md:translate-x-0 -translate-x-full" id="sidebar">
+        
+        <div class="p-5 border-b border-slate-100 bg-slate-50 space-y-4">
+            <div class="flex items-center justify-between">
+                <label class="text-sm font-bold text-slate-700">Number of Groups</label>
+                <input type="number" id="group-count" value="1" min="1" max="10" class="w-16 border border-slate-300 rounded p-1 text-center text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500">
+            </div>
+
+            <div class="bg-white border border-slate-200 rounded-lg p-3 space-y-3">
+                <div class="text-xs font-bold text-slate-400 uppercase tracking-wider">Layout Settings</div>
+                
+                <!-- Still fixed to 2 per page in createExamHTML -->
+                <div class="flex items-center justify-between">
+                    <label class="text-sm font-medium text-slate-700">Questions per Page</label>
+                    <select id="questions-per-page" onchange="regenerateIfReady()" class="border border-slate-300 rounded p-1 text-sm bg-slate-50">
+                        <option value="1">1 (Huge)</option>
+                        <option value="2" selected>2 (Large)</option>
+                        <option value="3">3 (Standard)</option>
+                        <option value="4">4 (Compact)</option>
+                    </select>
+                </div>
+
+                <div class="space-y-1">
+                    <div class="flex justify-between text-sm">
+                        <label class="font-medium text-slate-700">Default Image Scale</label>
+                        <span class="text-slate-400 text-xs" id="scale-val">100%</span>
+                    </div>
+                    <!-- This slider sets DEFAULT scale for new generated exams -->
+                    <input type="range" id="image-scale" min="50" max="150" value="100"
+                           class="w-full accent-indigo-600 h-2 bg-slate-200 rounded-lg appearance-none cursor-pointer"
+                           oninput="updateScaleLabel();">
+                </div>
+            </div>
+            
+            <div class="bg-indigo-50 border border-indigo-100 rounded-lg p-3 flex items-center justify-between">
+                <span class="text-xs font-bold text-indigo-900 uppercase">Total Questions</span>
+                <span class="text-2xl font-bold text-indigo-600" id="total-questions">0</span>
+            </div>
+        </div>
+
+        <div class="flex-1 overflow-y-auto p-4 space-y-4 bg-slate-100" id="banks-container">
+        </div>
+
+        <div class="p-4 bg-white border-t border-slate-200 shadow-up z-20">
+            <button onclick="addNewBank()" class="w-full py-2 mb-3 border-2 border-dashed border-slate-300 rounded-lg text-slate-500 hover:border-indigo-500 hover:text-indigo-600 font-medium transition-all flex items-center justify-center gap-2">
+                <i data-lucide="plus" class="w-4 h-4"></i> Add Question Bank
+            </button>
+
+            <button onclick="generateExams()" id="generate-btn" class="w-full bg-indigo-600 hover:bg-indigo-700 disabled:bg-slate-300 disabled:cursor-not-allowed text-white py-3 rounded-xl font-bold shadow-lg shadow-indigo-200 transition-all flex justify-center items-center gap-2" disabled>
+                <i data-lucide="printer" class="w-5 h-5"></i>
+                Generate & Preview
+            </button>
+        </div>
+    </aside>
+
+    <main class="flex-1 bg-slate-200/50 overflow-y-auto p-4 md:p-8 flex flex-col items-center relative">
+        <button onclick="toggleSidebar()" class="md:hidden absolute top-4 left-4 bg-white p-2 rounded shadow no-print z-20">
+            <i data-lucide="menu" class="w-6 h-6"></i>
+        </button>
+
+        <div id="empty-state" class="flex flex-col items-center justify-center h-full text-slate-400 no-print">
+            <i data-lucide="layout-template" class="w-24 h-24 mb-4 opacity-20"></i>
+            <p class="text-lg font-medium">Add banks and upload images</p>
+            <p class="text-sm mt-2 text-center max-w-xs">Tip: Default scale in sidebar, then fine-tune each image below.</p>
+        </div>
+
+        <div id="exams-container" class="w-full max-w-[210mm] hidden no-print space-y-8">
+        </div>
+    </main>
+</div>
+
+<input type="file" id="file-input" multiple accept="image/*" class="hidden">
+
+<script>
+    // --- State ---
+    let questionBanks = [{ id: 'bank_' + Date.now(), name: 'Questions', images: [], questionsToUse: 0 }];
+    let generatedExams = [];
+    let activeUploadBankId = null;
+    let isGenerated = false;
+
+    // --- Elements ---
+    const fileInput = document.getElementById('file-input');
+    const banksContainer = document.getElementById('banks-container');
+    const totalQuestionsDisplay = document.getElementById('total-questions');
+    const generateBtn = document.getElementById('generate-btn');
+    const emptyState = document.getElementById('empty-state');
+    const examsContainer = document.getElementById('exams-container');
+    const sidebar = document.getElementById('sidebar');
+
+    // --- Init ---
+    renderBanks();
+    lucide.createIcons();
+
+    // --- Logic ---
+
+    function updateScaleLabel() {
+        document.getElementById('scale-val').textContent =
+            document.getElementById('image-scale').value + '%';
+    }
+
+    function regenerateIfReady() {
+        // Layout dropdown is mostly cosmetic now; we don't auto regenerate
+        if (isGenerated) {
+            renderPreview();
+        }
+    }
+
+    function addNewBank() {
+        questionBanks.push({
+            id: 'bank_' + Date.now(),
+            name: `Bank ${questionBanks.length + 1}`,
+            images: [],
+            questionsToUse: 0
+        });
+        renderBanks();
+    }
+
+    function removeBank(id) {
+        if (questionBanks.length <= 1) return alert("Keep at least one bank.");
+        if (confirm('Remove this bank?')) {
+            questionBanks = questionBanks.filter(b => b.id !== id);
+            renderBanks();
+        }
+    }
+
+    function updateBankQuestions(id, count) {
+        const bank = questionBanks.find(b => b.id === id);
+        if (bank) {
+            bank.questionsToUse = Math.min(parseInt(count) || 0, bank.images.length);
+            updateTotalQuestions();
+            validateState();
+        }
+    }
+
+    function updateTotalQuestions() {
+        const total = questionBanks.reduce((sum, b) => sum + b.questionsToUse, 0);
+        totalQuestionsDisplay.textContent = total;
+    }
+
+    function renderBanks() {
+        banksContainer.innerHTML = '';
+        questionBanks.forEach((bank) => {
+            const bankEl = document.createElement('div');
+            bankEl.className = 'bg-white rounded-xl shadow-sm border border-slate-200 p-4';
+            bankEl.innerHTML = `
+                <div class="flex justify-between items-center mb-3">
+                    <span class="font-bold text-slate-700">${bank.name}</span>
+                    <button onclick="removeBank('${bank.id}')" class="text-slate-400 hover:text-red-500">
+                        <i data-lucide="trash-2" class="w-4 h-4"></i>
+                    </button>
+                </div>
+                <div class="flex gap-4 mb-3">
+                    <div onclick="triggerUpload('${bank.id}')" class="flex-1 border-2 border-dashed border-slate-200 rounded-lg h-20 flex flex-col items-center justify-center cursor-pointer hover:bg-slate-50 transition-colors">
+                        <i data-lucide="upload" class="w-4 h-4 text-indigo-500 mb-1"></i>
+                        <span class="text-xs text-slate-500">${bank.images.length} Images</span>
+                    </div>
+                    <div class="w-20">
+                        <label class="text-[10px] uppercase font-bold text-slate-400">Count</label>
+                        <input type="number" value="${bank.questionsToUse}" min="0" max="${bank.images.length}" 
+                               oninput="updateBankQuestions('${bank.id}', this.value)"
+                               class="w-full border border-slate-200 rounded p-1 text-center font-bold text-slate-700">
+                    </div>
+                </div>
+                ${bank.images.length > 0 ? `
+                    <div class="flex gap-1 overflow-x-auto pb-2">
+                        ${bank.images.map((img) => `
+                            <div class="w-8 h-8 flex-shrink-0 bg-slate-100 rounded bg-cover bg-center border border-slate-200"
+                                 style="background-image: url('${img.src}')"></div>`).join('')}
+                    </div>
+                    <button onclick="clearBank('${bank.id}')" class="text-[10px] text-red-400 underline mt-1">Clear Images</button>
+                ` : ''}
+            `;
+            banksContainer.appendChild(bankEl);
+        });
+        lucide.createIcons();
+        updateTotalQuestions();
+        validateState();
+    }
+
+    function triggerUpload(bankId) {
+        activeUploadBankId = bankId;
+        fileInput.click();
+    }
+
+    fileInput.addEventListener('change', (e) => {
+        if (activeUploadBankId && e.target.files.length > 0) {
+            const bank = questionBanks.find(b => b.id === activeUploadBankId);
+            Array.from(e.target.files).forEach(file => {
+                const reader = new FileReader();
+                reader.onload = (ev) => {
+                    bank.images.push({ id: Date.now() + Math.random(), src: ev.target.result });
+                    renderBanks();
+                };
+                reader.readAsDataURL(file);
+            });
+        }
+        fileInput.value = '';
+    });
+
+    function clearBank(id) {
+        const bank = questionBanks.find(b => b.id === id);
+        bank.images = [];
+        bank.questionsToUse = 0;
+        renderBanks();
+    }
+
+    function validateState() {
+        const total = questionBanks.reduce((sum, b) => sum + b.questionsToUse, 0);
+        generateBtn.disabled = total === 0;
+    }
+
+    // --- Generator Logic ---
+
+    function generateExams() {
+        isGenerated = true;
+        const groupCount = parseInt(document.getElementById('group-count').value) || 1;
+        const defaultScale = parseInt(document.getElementById('image-scale').value) || 100;
+
+        generatedExams = [];
+
+        for (let g = 0; g < groupCount; g++) {
+            let examQuestions = [];
+            questionBanks.forEach(bank => {
+                // Shuffle bank images
+                const shuffled = [...bank.images].sort(() => 0.5 - Math.random());
+                // Pick needed, clone and attach default scale
+                const selected = shuffled.slice(0, bank.questionsToUse).map(img => ({
+                    ...img,
+                    scale: defaultScale
+                }));
+                examQuestions = examQuestions.concat(selected);
+            });
+
+            generatedExams.push({
+                id: g,
+                name: String.fromCharCode(65 + g),
+                questions: examQuestions
+            });
+        }
+
+        renderPreview();
+        emptyState.classList.add('hidden');
+        examsContainer.classList.remove('hidden');
+        if (window.innerWidth < 768) sidebar.classList.add('-translate-x-full');
+    }
+
+    // --- Per-question scale update ---
+
+    function updateQuestionScale(examId, qIndex, value) {
+        const exam = generatedExams[examId];
+        if (!exam || !exam.questions[qIndex]) return;
+        exam.questions[qIndex].scale = parseInt(value) || 100;
+        // Re-render preview with new sizes
+        renderPreview();
+    }
+
+    // --- PDF HTML Construction ---
+
+    // withControls = true → sliders shown (preview only)
+    function createExamHTML(exam, withControls = false) {
+        let html = '';
+        const imagesPerPage = 2; // 2 questions per A4 page
+        const BASE_HEIGHT_MM = 110; // base height for scale 100%
+
+        const pages = [];
+        for (let i = 0; i < exam.questions.length; i += imagesPerPage) {
+            pages.push(exam.questions.slice(i, i + imagesPerPage));
+        }
+
+        pages.forEach((pageQuestions, pageIndex) => {
+            html += `<div class="a4-page">`;
+
+            if (pageIndex === 0) {
+                html += `
+                    <div style="display: flex; justify-content: space-between; align-items: flex-end; margin-bottom: 20px; border-bottom: 1px solid #e2e8f0; padding-bottom: 10px;">
+                        <div style="font-size: 32px; font-weight: 800; color: #0f172a; line-height: 1;">
+                            Grupi ${exam.name}
+                        </div>
+                        <div style="font-size: 16px; color: #334155; font-weight: 500;">
+                            Emri Mbiemri: <span style="display: inline-block; width: 200px; border-bottom: 1.5px solid #000;"></span>
+                        </div>
+                    </div>
+                `;
+            } else {
+                html += `<div style="height: 20px;"></div>`;
+            }
+
+            html += `<div style="flex: 1; display: flex; flex-direction: column; gap: 18px;">`;
+
+            const globalStartIdx = pageIndex * imagesPerPage;
+
+            pageQuestions.forEach((q, idx) => {
+                const qIndex = globalStartIdx + idx;
+                const qNum = qIndex + 1;
+                const qScale = q.scale || 100;
+                const heightMm = BASE_HEIGHT_MM * (qScale / 100);
+
+                html += `
+                    <div style="
+                        height: ${heightMm}mm;
+                        display: flex;
+                        flex-direction: column;
+                        page-break-inside: avoid;
+                    ">
+                        <div style="font-size: 18px; font-weight: 700; color: #1e293b; margin-bottom: 4px;">
+                            ${qNum}.
+                        </div>
+                        <div style="
+                            flex: 1;
+                            border: 1px solid #cbd5e1;
+                            border-radius: 4px;
+                            padding: 4px;
+                            display: flex;
+                            align-items: center;
+                            justify-content: center;
+                            background: white;
+                            overflow: hidden;
+                        ">
+                            <img src="${q.src}" style="
+                                max-width: 100%;
+                                max-height: 100%;
+                                object-fit: contain;
+                                display: block;
+                            ">
+                        </div>
+                `;
+
+                if (withControls) {
+                    // Slider for this specific question (preview only)
+                    html += `
+                        <div class="no-print" style="margin-top: 6px; font-size: 10px; display: flex; align-items: center; gap: 6px;">
+                            <span style="color:#64748b;">Scale:</span>
+                            <span id="scale-label-${exam.id}-${qIndex}" style="min-width: 32px; text-align: right; color:#0f172a;">
+                                ${qScale}%
+                            </span>
+                            <input type="range"
+                                   min="50" max="150"
+                                   value="${qScale}"
+                                   oninput="updateQuestionScale(${exam.id}, ${qIndex}, this.value)"
+                                   style="flex:1;">
+                        </div>
+                    `;
+                }
+
+                html += `</div>`;
+            });
+
+            html += `</div></div>`;
+        });
+
+        return html;
+    }
+
+    function renderPreview() {
+        examsContainer.innerHTML = '';
+
+        generatedExams.forEach(exam => {
+            const wrapper = document.createElement('div');
+            wrapper.innerHTML = `
+                <div class="flex justify-between items-center mb-2 px-2">
+                    <h3 class="font-bold text-lg">Exam Group ${exam.name}</h3>
+                    <div class="flex gap-2">
+                        <button onclick="downloadPDF(${exam.id})" class="text-xs bg-indigo-600 text-white px-3 py-1 rounded hover:bg-indigo-700">Download PDF</button>
+                        <button onclick="printExam(${exam.id})" class="text-xs bg-slate-700 text-white px-3 py-1 rounded hover:bg-slate-800">Print</button>
+                    </div>
+                </div>
+                ${createExamHTML(exam, true)}
+            `;
+            examsContainer.appendChild(wrapper);
+        });
+    }
+
+    function downloadPDF(examId) {
+        const exam = generatedExams[examId];
+        const element = document.createElement('div');
+        // No controls in PDF
+        element.innerHTML = createExamHTML(exam, false);
+        
+        html2pdf().set({
+            margin: 0,
+            filename: `Exam_${exam.name}.pdf`,
+            image: { type: 'jpeg', quality: 0.98 },
+            html2canvas: { scale: 3 },
+            jsPDF: { unit: 'mm', format: 'a4', orientation: 'portrait' }
+        }).from(element).save();
+    }
+
+    function printExam(examId) {
+        const exam = generatedExams[examId];
+        const w = window.open('', '_blank');
+        w.document.write(`
+            <html>
+            <head>
+                <title>Print Exam ${exam.name}</title>
+                <style>
+                    @page { size: A4; margin: 0; }
+                    body { margin: 0; padding: 0; font-family: sans-serif; }
+                    .a4-page { width: 210mm; height: 297mm; padding: 20mm; box-sizing: border-box; display: flex; flex-direction: column; page-break-after: always; }
+                    .a4-page:last-child { page-break-after: auto; }
+                </style>
+            </head>
+            <body>${createExamHTML(exam, false)}</body>
+            </html>
+        `);
+        w.document.close();
+        setTimeout(() => w.print(), 500);
+    }
+
+    function toggleSidebar() {
+        sidebar.classList.toggle('-translate-x-full');
+    }
+
+    function resetApp() {
+        if (confirm('Reset all data?')) window.location.reload();
+    }
+</script>
+</body>
+</html>
