@@ -44,6 +44,13 @@ table.b1 td.bg  {
 	border-color: transparent;
 	padding:2px 3px 0px 3px;
 }
+.lbl2 {
+	font-size: 19px;
+	border: 2px solid;
+	border-color: transparent;
+	padding:2px 3px 0px 3px;
+}
+
 .trow img {
 	margin-top:2px;
 }
